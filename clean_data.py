@@ -1,5 +1,5 @@
-import os
-os.environ["PYSPARK_PYTHON"]='/Users/diogomesquita/anaconda/envs/py3.6/bin/python'
+#import os
+#os.environ["PYSPARK_PYTHON"]='/Users/diogomesquita/anaconda/envs/py3.6/bin/python'
 
 from pyspark import SparkContext
 from pyspark.sql import SQLContext, SparkSession
@@ -32,7 +32,7 @@ def correct_bad_classified_cols(df, verbose=False):
             replaced_df = replaced_df.drop(tmp_col)
     return replaced_df
 
-def remove_na_string_cols(df, col):
+def remove_na_string_cols(df):
     string_cols = [col for col, dtype in df.dtypes if 'string' in dtype]
     return df.dropna(subset=string_cols)
 
@@ -47,7 +47,7 @@ def main(files_in, verbose):
         replaced_df = correct_bad_classified_cols(df, verbose)
 
         # remove null values
-        cleaned_df = remove_na_string_cols(replaced_df, col)
+        cleaned_df = remove_na_string_cols(replaced_df)
         
         #TODO: remove nas other types
 
