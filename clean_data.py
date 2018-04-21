@@ -1,4 +1,7 @@
-#import os
+import os
+import glob
+import shutil
+
 #os.environ["PYSPARK_PYTHON"]='/Users/diogomesquita/anaconda/envs/py3.6/bin/python'
 
 from pyspark import SparkContext
@@ -32,9 +35,8 @@ def correct_bad_classified_cols(df, verbose=False):
             replaced_df = replaced_df.drop(tmp_col)
     return replaced_df
 
-def remove_na_string_cols(df):
-    string_cols = [col for col, dtype in df.dtypes if 'string' in dtype]
-    return df.dropna(subset=string_cols)
+def dropna(df):
+    return df.dropna()
 
 def main(files_in, verbose):
     spark = SparkSession \
@@ -47,14 +49,19 @@ def main(files_in, verbose):
         replaced_df = correct_bad_classified_cols(df, verbose)
 
         # remove null values
-        cleaned_df = remove_na_string_cols(replaced_df)
+        cleaned_df = dropna(replaced_df)
         
         #TODO: remove nas other types
+        out_folder = "{}_clean".format(tsv.split('.')[0])
+        cleaned_df.coalesce(1).write.csv(out_folder, mode='overwrite', sep='\t', header=True)
 
-        f_out = "{}_clean".format(tsv.split('.')[0])
-        cleaned_df.coalesce(1).write.csv(f_out, mode='overwrite', sep='\t', header=True)
-        
+        csv_file = glob.glob("{}/*.csv".format(out_folder))[0]
+        f_out = "{}_clean.tsv".format(tsv.split('.')[0])
+        os.rename(csv_file, f_out)       
+        shutil.rmtree(out_folder)
+
         spark.stop()
+    
 if __name__ == '__main__':
     args = parser.parse_args()
     main(**vars(args))
