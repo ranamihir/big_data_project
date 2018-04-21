@@ -1,4 +1,5 @@
-import numeric_outliers
+import utils
+import numpy as np
 from pyspark.mllib.clustering import KMeans, KMeansModel
 
 def kmeans_outliers(df,col,k=3,maxIterations = 100):
@@ -18,10 +19,10 @@ def kmeans_outliers(df,col,k=3,maxIterations = 100):
     vso = df_col_rdd.map(lambda x: np.array(float(x[1])))
     clusters = KMeans.train(vso,k,initializationMode='random',maxIterations=maxIterations)
     rdd_w_clusts = df_col_rdd.map(lambda x: addclustercols(x))
-    kmeans_df = spark.createDataFrame(rdd_w_clusts,('rid',col,'c_no','dist_c'))
-    outlier_all = numeric_outliers.get_outliers(kmeans_df.where(kmeans_df['c_no']==0),'dist_c')
+    kmeans_df = rdd_w_clusts.toDF(['rid',col,'c_no','dist_c'])
+    outlier_all = utils.get_outliers(kmeans_df.where(kmeans_df['c_no']==0),'dist_c')
     for i in range(1,k):
-        outlier_c = numeric_outliers.get_outliers(kmeans_df.where(kmeans_df['c_no']==i),'dist_c')
+        outlier_c = utils.get_outliers(kmeans_df.where(kmeans_df['c_no']==i),'dist_c')
         outlier_all = outlier_all.unionAll(outlier_c)
-    #outliers = numeric_outliers.get_outliers(kmeans_df,'dist_c')
+    #outliers = utils.get_outliers(kmeans_df,'dist_c')
     return outlier_all
