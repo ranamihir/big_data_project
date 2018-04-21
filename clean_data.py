@@ -1,15 +1,11 @@
-#import os
-#os.environ["PYSPARK_PYTHON"]='/Users/diogomesquita/anaconda/envs/py3.6/bin/python'
+import argparse
 
-from pyspark import SparkContext
-from pyspark.sql import SQLContext, SparkSession
-from pyspark.sql.functions import UserDefinedFunction
-from pyspark.sql.types import StringType, IntegerType, DoubleType
+#os.environ["PYSPARK_PYTHON"]='/Users/diogomesquita/anaconda/envs/py3.6/bin/python'
+from pyspark.sql import SparkSession
+from pyspark.sql.types import DoubleType
 from pyspark.sql.functions import *
 
 import utils
-
-import argparse
 
 parser = argparse.ArgumentParser(description='Clean data and remove null values.')
 parser.add_argument('files_in', metavar='fin', type=str, nargs='+',
@@ -58,11 +54,11 @@ def main(files_in, verbose):
         cleaned_df = remove_na_string_cols(replaced_df)
         
         #TODO: remove nas other types
+        f_out = "{}_clean.tsv".format(tsv.split('.')[0])
+        utils.write_tsv(cleaned_df, f_out)
 
-        f_out = "{}_clean".format(tsv.split('.')[0])
-        cleaned_df.coalesce(1).write.csv(f_out, mode='overwrite', sep='\t', header=True)
-        
-        spark.stop()
+    spark.stop()
+    
 if __name__ == '__main__':
     args = parser.parse_args()
     main(**vars(args))
