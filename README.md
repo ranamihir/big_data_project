@@ -1,10 +1,11 @@
-# big_data_project
-Project for 'DS-GA 1004 Big Data'
+# Project for 'DS-GA 1004 Big Data'
+ ## Nulls and Outliers Detection
+
 
 ### Requirements
- - pyspark: `pip install pyspark`
+ - pyspark: `pip3 install pyspark`
 
 ### Usage
-`python clead_data.py path/file.tsv`
+`python3 src/clean_data.py <folder_path/{file}.tsv>`
 
-The output will be stored in the folder `path/file_cleaned`
+The output will be stored in `<folder_path/{file}_cleaned.tsv>`
