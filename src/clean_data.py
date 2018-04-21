@@ -1,6 +1,4 @@
 import argparse
-
-#os.environ["PYSPARK_PYTHON"]='/Users/diogomesquita/anaconda/envs/py3.6/bin/python'
 from pyspark.sql import SparkSession
 from pyspark.sql.types import DoubleType
 from pyspark.sql.functions import *
@@ -42,10 +40,10 @@ def main(files_in, verbose):
         df = dropna(df)
         replaced_df = correct_bad_classified_cols(df, verbose)
 
-        # remove null values
+        # Remove null values
         cleaned_df = dropna(replaced_df)
         
-        #TODO: remove nas other types
+        #TODO: remove nulls of other types
         f_out = "{}_clean.tsv".format(tsv.split('.')[0])
         utils.write_tsv(cleaned_df, f_out)
 
