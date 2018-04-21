@@ -18,7 +18,9 @@ def replace_commas_symbols(ele):
     return re.sub(symbols_re, '', removed_commas)
     
 def is_double(df, col):
-    vals = np.array(df.select(col).limit(500).rdd.map(lambda x: x[0]).collect())
+    vals = np.array(df.select(col)
+                      .head(500))
+
     not_double = np.sum(vals == None)/len(vals)
     return not_double < .3
 
