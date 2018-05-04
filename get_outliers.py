@@ -15,6 +15,15 @@ parser = argparse.ArgumentParser(description='Write outliers')
 parser.add_argument('files_in', metavar='fin', type=str, nargs='+',
                     help='path to tsv files to clean')
 
+def print_outlier_summary(outliers, df_count):
+    print("\tFrequency:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(outliers.count(), 100*(outliers.count()/df_count)))
+
+def str_frequency(df, col):
+    vals = df.groupBy(col).count()
+    out = iqr_outliers(df, col, vals, 'left')
+    print_outlier_summary(out, df.count())
+    return out
+
 def kmeans_outliers(df,col,k=3,maxIterations = 100):
     def addclustercols(x):
         point = np.array(float(x[1]))
@@ -38,9 +47,10 @@ def kmeans_outliers(df,col,k=3,maxIterations = 100):
         outlier_c = iqr_outliers(kmeans_df.where(kmeans_df['c_no']==i),'dist_c')
         outlier_all = outlier_all.unionAll(outlier_c)
     #outliers = iqr_outliers(kmeans_df,'dist_c')
+    print_outlier_summary(outlier_all, df.count())
     return outlier_all
 
-def iqr_outliers(df, col, vals=None, side='both'):
+def iqr_outliers(df, col, vals=None, side='both', to_print=False):
     '''
     vals: if present should have two columns: first is the column col and second the column count
 
@@ -72,6 +82,9 @@ def iqr_outliers(df, col, vals=None, side='both'):
         out = df_temp.where((df_temp[counts_col] < bounds[col][0]) | (df_temp[counts_col] > bounds[col][1])).select('rid', col, counts_col)
     elif side == 'left':
         out = df_temp.where(df_temp[counts_col] < bounds[col][0]).select('rid', col, counts_col)
+
+    if to_print:
+        print_outlier_summary(out, df.count())
     return out
 
 def main(files_in):
@@ -83,7 +96,6 @@ def main(files_in):
     for tsv in files_in:
         df = spark.read.csv(tsv, header = True,inferSchema = True, sep='\t')
         df_count = df.count()
-
         outliers = defaultdict(dict)
         if 'rid' not in df.columns:
             df = df.withColumn("rid", monotonically_increasing_id())
@@ -95,13 +107,10 @@ def main(files_in):
 
             if 'string' in dtype:
                 vals = df.groupBy(col).count()
-                outliers[col]['frequency'] = iqr_outliers(df, col, vals, 'left')
-                print("\tFrequency:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(outliers[col]['frequency'].count(), 100*(outliers[col]['frequency'].count()/df_count)))
+                outliers[col]['frequency'] = str_frequency(df, col)
             else:
-                outliers[col]['iqr'] = iqr_outliers(df, col)
+                outliers[col]['iqr'] = iqr_outliers(df, col, to_print=True)
                 outliers[col]['kmeans'] = kmeans_outliers(df, col)
-                print("\tKmeans:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(outliers[col]['kmeans'].count(), 100*(outliers[col]['kmeans'].count()/df_count)))    
-                print("\tIQR:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(outliers[col]['iqr'].count(), 100*(outliers[col]['iqr'].count()/df_count)))
 
     spark.stop()
     
