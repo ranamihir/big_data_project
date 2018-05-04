@@ -34,7 +34,7 @@ def main(files_in, verbose):
             .builder \
             .appName("Nulls and Outliers Detection") \
             .getOrCreate()
-
+    
     for tsv in files_in:
         df = spark.read.load(tsv,format="csv", sep="\t", inferSchema="true", header="true")
         df = dropna(df)

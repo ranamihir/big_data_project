@@ -78,7 +78,6 @@ def main(files_in):
             .appName("Nulls and Outliers Detection") \
             .getOrCreate()
 
-    print("IQR method...")
     for tsv in files_in:
         df = spark.read.csv(tsv, header = True,inferSchema = True, sep='\t')
         df_count = df.count()
