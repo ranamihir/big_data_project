@@ -34,7 +34,7 @@ def main(files_in, verbose):
             .builder \
             .appName("Nulls and Outliers Detection") \
             .getOrCreate()
-    
+
     for tsv in files_in:
         df = spark.read.load(tsv,format="csv", sep="\t", inferSchema="true", header="true")
         df = dropna(df)
@@ -43,7 +43,6 @@ def main(files_in, verbose):
         # Remove null values
         cleaned_df = dropna(replaced_df)
         
-        #TODO: remove nulls of other types
         f_out = "{}_clean.tsv".format(tsv.split('.')[0])
         utils.write_tsv(cleaned_df, f_out)
 

@@ -31,8 +31,16 @@ def is_double(df, col):
 def write_tsv(df, f_out):
     out_folder = "{}_temp".format(f_out)
     df.coalesce(1).write.csv(out_folder, sep='\t', header=True)
-    csv_file = glob.glob("{}/*.csv".format(out_folder))[0]
-    os.rename(csv_file, f_out)
-    shutil.rmtree(out_folder)
+    organize_cleaned_data(out_folder, f_out)
+
+def organize_cleaned_data(out_folder, f_out):
+    try:
+        csv_file = glob.glob("{}/*.csv".format(out_folder))[0]
+        os.rename(csv_file, f_out)
+        shutil.rmtree(out_folder)
+    except:
+        # running in dumbo with hdfs
+        return
+    
 
 replace_commas_symbols_udf = udf(replace_commas_symbols, StringType())

@@ -1,7 +1,7 @@
 import glob
 import shutil
 import argparse
-
+from collections import defaultdict
 import numpy as np
 
 from pyspark.sql import SparkSession
@@ -49,6 +49,9 @@ def iqr_outliers(df, col, vals=None, side='both'):
     '''
     bounds = {}
     df_temp = vals if vals else df
+    if vals:
+        vals_col = "{}_temp".format(col)
+        vals = vals.withColumnRenamed(col, vals_col)
 
     counts_col = 'count' if vals else col  
     if df_temp.count() == 0:
@@ -63,14 +66,13 @@ def iqr_outliers(df, col, vals=None, side='both'):
     if 'rid' not in df.columns:
         df = df.withColumn('rid', monotonically_increasing_id())
     if vals:
-        df_temp = df.join(vals, df[col] == vals[col]).drop(vals[col])
+        df_temp = df.join(vals, df[col] == vals[vals_col]).drop(vals[vals_col])
 
     if side == 'both':
         out = df_temp.where((df_temp[counts_col] < bounds[col][0]) | (df_temp[counts_col] > bounds[col][1])).select('rid', col, counts_col)
     elif side == 'left':
         out = df_temp.where(df_temp[counts_col] < bounds[col][0]).select('rid', col, counts_col)
     return out
-
 
 def main(files_in):
     spark = SparkSession \
@@ -82,8 +84,7 @@ def main(files_in):
         df = spark.read.csv(tsv, header = True,inferSchema = True, sep='\t')
         df_count = df.count()
 
-        keyval = {}
-        kmeans = {}
+        outliers = defaultdict(dict)
         if 'rid' not in df.columns:
             df = df.withColumn("rid", monotonically_increasing_id())
 
@@ -91,14 +92,16 @@ def main(files_in):
             print("### Col: {} | dtype: {} ###".format(col, dtype))
             if col == 'rid':
                 continue
-            vals = df.groupBy(col).count() if 'string' in dtype else None
-            side = 'left' if 'string' in dtype else 'both'
-            keyval[col] = iqr_outliers(df, col, vals, side)
 
-            if 'string' not in dtype:
-                kmeans[col] = kmeans_outliers(df, col)
-                print("\tKmeans:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(kmeans[col].count(), 100*(kmeans[col].count()/df_count)))    
-            print("\tIQR:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(keyval[col].count(), 100*(keyval[col].count()/df_count)))
+            if 'string' in dtype:
+                vals = df.groupBy(col).count()
+                outliers[col]['frequency'] = iqr_outliers(df, col, vals, 'left')
+                print("\tFrequency:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(outliers[col]['frequency'].count(), 100*(outliers[col]['frequency'].count()/df_count)))
+            else:
+                outliers[col]['iqr'] = iqr_outliers(df, col)
+                outliers[col]['kmeans'] = kmeans_outliers(df, col)
+                print("\tKmeans:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(outliers[col]['kmeans'].count(), 100*(outliers[col]['kmeans'].count()/df_count)))    
+                print("\tIQR:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(outliers[col]['iqr'].count(), 100*(outliers[col]['iqr'].count()/df_count)))
 
     spark.stop()
     
