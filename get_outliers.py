@@ -20,7 +20,7 @@ def print_outlier_summary(outliers, df_count, title):
 
 def str_frequency(df, col):
     vals = df.groupBy(col).count()
-    out = iqr_outliers(df, col, vals, 'left')
+    out, _ = iqr_outliers(df, col, vals, 'left')
     print_outlier_summary(out, df.count(), "Frequency")
     return out
 
@@ -42,11 +42,11 @@ def kmeans_outliers(df,col,k=3,maxIterations = 100):
     clusters = KMeans.train(vso,k,initializationMode='random',maxIterations=maxIterations)
     rdd_w_clusts = df_col_rdd.map(lambda x: addclustercols(x))
     kmeans_df = rdd_w_clusts.toDF(['rid',col,'c_no','dist_c'])
-    outlier_all = iqr_outliers(kmeans_df.where(kmeans_df['c_no']==0),'dist_c')
+    outlier_all, _ = iqr_outliers(kmeans_df.where(kmeans_df['c_no']==0),'dist_c')
     for i in range(1,k):
-        outlier_c = iqr_outliers(kmeans_df.where(kmeans_df['c_no']==i),'dist_c')
+        outlier_c, _ = iqr_outliers(kmeans_df.where(kmeans_df['c_no']==i),'dist_c')
         outlier_all = outlier_all.unionAll(outlier_c)
-    #outliers = iqr_outliers(kmeans_df,'dist_c')
+    #outliers, _ = iqr_outliers(kmeans_df,'dist_c')
     print_outlier_summary(outlier_all, df.count(), "Kmeans")
     return outlier_all
 
@@ -65,7 +65,7 @@ def iqr_outliers(df, col, vals=None, side='both', to_print=False):
 
     counts_col = 'count' if vals else col  
     if df_temp.count() == 0:
-        return df_temp.select('rid', col, counts_col)
+        return df_temp.select('rid', col), df_temp.select(counts_col)
 
     quantiles = df_temp.approxQuantile(counts_col,[0.25,0.75],0.05)
     try:
@@ -79,13 +79,13 @@ def iqr_outliers(df, col, vals=None, side='both', to_print=False):
         df_temp = df.join(vals, df[col] == vals[vals_col]).drop(vals[vals_col])
 
     if side == 'both':
-        out = df_temp.where((df_temp[counts_col] < bounds[col][0]) | (df_temp[counts_col] > bounds[col][1])).select('rid', col, counts_col)
+        out = df_temp.where((df_temp[counts_col] < bounds[col][0]) | (df_temp[counts_col] > bounds[col][1]))
     elif side == 'left':
-        out = df_temp.where(df_temp[counts_col] < bounds[col][0]).select('rid', col, counts_col)
+        out = df_temp.where(df_temp[counts_col] < bounds[col][0])
 
     if to_print:
         print_outlier_summary(out, df.count(), "IQR")
-    return out
+    return out.select('rid', col), out.select('rid', counts_col)
 
 def main(files_in):
     spark = SparkSession \
@@ -109,7 +109,7 @@ def main(files_in):
                 vals = df.groupBy(col).count()
                 outliers[col]['frequency'] = str_frequency(df, col)
             else:
-                outliers[col]['iqr'] = iqr_outliers(df, col, to_print=True)
+                outliers[col]['iqr'], _ = iqr_outliers(df, col, to_print=True)
                 outliers[col]['kmeans'] = kmeans_outliers(df, col)
 
     spark.stop()
