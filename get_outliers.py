@@ -15,13 +15,13 @@ parser = argparse.ArgumentParser(description='Write outliers')
 parser.add_argument('files_in', metavar='fin', type=str, nargs='+',
                     help='path to tsv files to clean')
 
-def print_outlier_summary(outliers, df_count):
-    print("\tFrequency:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(outliers.count(), 100*(outliers.count()/df_count)))
+def print_outlier_summary(outliers, df_count, title):
+    print("\t{}:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(title, outliers.count(), 100*(outliers.count()/df_count)))
 
 def str_frequency(df, col):
     vals = df.groupBy(col).count()
     out = iqr_outliers(df, col, vals, 'left')
-    print_outlier_summary(out, df.count())
+    print_outlier_summary(out, df.count(), "Frequency")
     return out
 
 def kmeans_outliers(df,col,k=3,maxIterations = 100):
@@ -47,7 +47,7 @@ def kmeans_outliers(df,col,k=3,maxIterations = 100):
         outlier_c = iqr_outliers(kmeans_df.where(kmeans_df['c_no']==i),'dist_c')
         outlier_all = outlier_all.unionAll(outlier_c)
     #outliers = iqr_outliers(kmeans_df,'dist_c')
-    print_outlier_summary(outlier_all, df.count())
+    print_outlier_summary(outlier_all, df.count(), "Kmeans")
     return outlier_all
 
 def iqr_outliers(df, col, vals=None, side='both', to_print=False):
@@ -84,7 +84,7 @@ def iqr_outliers(df, col, vals=None, side='both', to_print=False):
         out = df_temp.where(df_temp[counts_col] < bounds[col][0]).select('rid', col, counts_col)
 
     if to_print:
-        print_outlier_summary(out, df.count())
+        print_outlier_summary(out, df.count(), "IQR")
     return out
 
 def main(files_in):
