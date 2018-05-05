@@ -25,7 +25,6 @@ for f in ${infiles[*]}; do
   out_dir=${f%.tsv}_clean.tsv_temp # out dir from clean_data.py
   file_out=${out_dir##*/}
   clean_file=$clean_dir/${file_out%%_temp}
-
   hadoop fs -mv $out_dir/*.csv $clean_file
   hadoop fs -rm -r $out_dir
 

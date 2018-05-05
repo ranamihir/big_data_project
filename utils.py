@@ -25,7 +25,7 @@ def is_double(df, col):
     vals = np.array(df.select(col)
                       .head(500))
 
-    not_double = np.sum(vals == None)/len(vals)
+    not_double = np.sum(np.equal(vals, None))/len(vals)
     return not_double < .3
 
 def write_tsv(df, f_out):
