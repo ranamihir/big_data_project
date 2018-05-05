@@ -1,5 +1,7 @@
 import glob
 import shutil
+import time
+import json
 import argparse
 from collections import defaultdict
 import numpy as np
@@ -17,6 +19,13 @@ parser.add_argument('files_in', metavar='fin', type=str, nargs='+',
 
 def print_outlier_summary(outliers, df_count, title):
     print("\t{}:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(title, outliers.count(), 100*(outliers.count()/df_count)))
+
+def str_length(df, col):
+    target_col = "{}_len".format(col)
+    df = df.withColumn(target_col, utils.col_len_udf(df[col]))
+    out, out_target = iqr_outliers(df, col, target_col)
+    print_outlier_summary(out, df.count(), "Length")
+    return out
 
 def str_frequency(df, col):
     vals = df.groupBy(col).count()
@@ -69,6 +78,7 @@ def iqr_outliers(df, col, target_col=None, side='both', to_print=False):
     IQR = quantiles[1] - quantiles[0]
     threshold = 1.5
     not_done = True
+    out = None
     while not_done:
         bounds[col] = [quantiles[0] - threshold * IQR, quantiles[1] + threshold * IQR]
         if 'rid' not in df.columns:
@@ -77,7 +87,7 @@ def iqr_outliers(df, col, target_col=None, side='both', to_print=False):
             out = df.where((df[target_col] < bounds[col][0]) | (df[target_col] > bounds[col][1]))
         elif side == 'left':
             out = df.where(df[target_col] < bounds[col][0])
-        not_done = float(out.count())/df.count() > .05
+        not_done = float(out.count())/df.count() > .02 and threshold < 10
         threshold += .5
 
     if to_print:
@@ -103,8 +113,8 @@ def main(files_in):
                 continue
 
             if 'string' in dtype:
-                vals = df.groupBy(col).count()
                 outliers[col]['frequency'] = str_frequency(df, col)
+                outliers[col]['length'] = str_length(df, col)
             else:
                 outliers[col]['iqr'], _ = iqr_outliers(df, col, to_print=True)
                 outliers[col]['kmeans'] = kmeans_outliers(df, col)

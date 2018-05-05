@@ -5,7 +5,7 @@ import glob
 import shutil
 
 from pyspark.sql.functions import *
-from pyspark.sql.types import StringType
+from pyspark.sql.types import StringType, IntegerType
 
 commas_re = re.compile('(\d+,\d+)(,\d*)*')
 symbols_re = re.compile('(^\W+|\W+$)')
@@ -41,6 +41,10 @@ def organize_cleaned_data(out_folder, f_out):
     except:
         # running in dumbo with hdfs
         return
+
+def col_len(ele):
+    return len(ele)
     
 
 replace_commas_symbols_udf = udf(replace_commas_symbols, StringType())
+col_len_udf = udf(col_len, IntegerType())
