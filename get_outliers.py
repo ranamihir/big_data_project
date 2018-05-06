@@ -85,7 +85,7 @@ def iqr_outliers(df, col, target_col=None, side='both', to_print=False):
 
     quantiles = df.approxQuantile(target_col,[0.25,0.75],0.05)
     IQR = quantiles[1] - quantiles[0]
-    threshold, df_count = 1.5, df.count()
+    threshold = 1.5
     not_done = True
     while not_done:
         bounds[col] = [quantiles[0] - threshold * IQR, quantiles[1] + threshold * IQR]
@@ -95,11 +95,11 @@ def iqr_outliers(df, col, target_col=None, side='both', to_print=False):
             out = df.where((df[target_col] < bounds[col][0]) | (df[target_col] > bounds[col][1]))
         elif side == 'left':
             out = df.where(df[target_col] < bounds[col][0])
-        not_done = float(out.count())/df_count > .05
+        not_done = float(out.count())/df.count() > .05
         threshold += .5
 
     if to_print:
-        out_count = out.count()
+        out_count, df_count = out.count(), df.count()
         print_outlier_summary(out_count, df_count, "IQR")
     return out.select('rid', col), out.select('rid', target_col)
 
