@@ -4,12 +4,15 @@ import time
 import json
 import argparse
 from collections import defaultdict
+from scipy.spatial.distance import euclidean
 import numpy as np
 
 from pyspark.sql import SparkSession
 from pyspark.sql.types import DoubleType
 from pyspark.sql.functions import *
+from pyspark.mllib.feature import StandardScaler, StandardScalerModel
 from pyspark.mllib.clustering import KMeans, KMeansModel
+from pyspark.ml.feature import Bucketizer
 
 import utils
 
@@ -17,8 +20,8 @@ parser = argparse.ArgumentParser(description='Write outliers')
 parser.add_argument('files_in', metavar='fin', type=str, nargs='+',
                     help='path to tsv files to clean')
 
-def print_outlier_summary(outliers, df_count, title):
-    print("\t{}:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(title, outliers.count(), 100*(outliers.count()/df_count)))
+def print_outlier_summary(outliers_count, df_count, title):
+    print("\t{}:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(title, outliers_count, 100*(outliers_count/df_count)))
 
 def str_length(df, col):
     target_col = "{}_len".format(col)
@@ -27,39 +30,63 @@ def str_length(df, col):
     print_outlier_summary(out, df.count(), "Length")
     return out
 
-def str_frequency(df, col):
+def bucket_frequency(df, col, title='Frequency'):
     vals = df.groupBy(col).count()
     vals_col = "{}_temp".format(col)
     vals = vals.withColumnRenamed(col, vals_col)
     df = df.join(vals, df[col] == vals[vals_col]).drop(vals[vals_col])
     out, _ = iqr_outliers(df, col, 'count', 'left')
-    print_outlier_summary(out, df.count(), "Frequency")
+    out_count, df_count = out.count(), df.count()
+    print_outlier_summary(out_count, df_count, title)
     return out
 
-def kmeans_outliers(df,col,k=3,maxIterations = 100):
+def histogram_outliers(df, col, bins=50):
+    max_val = df.agg({col: 'max'}).collect()[0][0]
+    min_val = df.agg({col: 'min'}).collect()[0][0]
+    splits = np.linspace(min_val, max_val, num=bins+1, endpoint=True)
+    bucketizer = Bucketizer(splits=splits, inputCol=col, outputCol='{}_bucket'.format(col))
+    df_buck = bucketizer.setHandleInvalid('keep').transform(df)
+    return bucket_frequency(df_buck, '{}_bucket'.format(col), 'Frequency @ {} bins'.format(bins))
+
+def kmeans_outliers(df, numeric_cols, k=3, maxIterations=100):
     def addclustercols(x):
-        point = np.array(float(x[1]))
+        points = np.array(x[1].toArray()).astype(float)
         center = clusters.centers[0]
-        mindist = np.abs(point - center)
+        mindist = euclidean(points, center)
         c1 = 0
-        for i in range(1,len(clusters.centers)):
+
+        for i in range(1, len(clusters.centers)):
             center = clusters.centers[i]
-            dist = np.abs(point - center)
+            dist = euclidean(points, center)
             if dist < mindist:
                 c1 = i
                 mindist = dist
-        return (int(x[0]),float(x[1]),int(c1),float(mindist))
-    df_col_rdd = df.select(df['rid'],df[col]).rdd
-    vso = df_col_rdd.map(lambda x: np.array(float(x[1])))
-    clusters = KMeans.train(vso,k,initializationMode='random',maxIterations=maxIterations)
+        return (int(x[0]), int(c1), float(mindist))
+
+    # Convert to array if only one column (univariate) passed
+    if not isinstance(numeric_cols, list):
+        numeric_cols = [numeric_cols]
+    cols = ['rid']
+    cols.extend(numeric_cols)
+    df_col_rdd = df[cols].rdd
+    label = df_col_rdd.map(lambda x: x[0])
+    vso = df_col_rdd.map(lambda x: np.array(x[1:]).astype(float))
+    scaler = StandardScaler(withMean=True, withStd=True).fit(vso)
+    vso = scaler.transform(vso)
+
+    clusters = KMeans.train(vso, k, initializationMode='k-means||', maxIterations=maxIterations)
+    df_col_rdd = label.zip(vso).toDF().rdd
     rdd_w_clusts = df_col_rdd.map(lambda x: addclustercols(x))
-    kmeans_df = rdd_w_clusts.toDF(['rid',col,'c_no','dist_c'])
-    outlier_all, _ = iqr_outliers(kmeans_df.where(kmeans_df['c_no']==0),'dist_c')
-    for i in range(1,k):
-        outlier_c, _ = iqr_outliers(kmeans_df.where(kmeans_df['c_no']==i),'dist_c')
+    cols = ['rid', 'c_no', 'dist_c']
+    kmeans_df = rdd_w_clusts.toDF(cols)
+    outlier_all, _ = iqr_outliers(kmeans_df.where(kmeans_df['c_no'] == 0), 'dist_c')
+    for i in range(1, k):
+        outlier_c, _ = iqr_outliers(kmeans_df.where(kmeans_df['c_no'] == i), 'dist_c')
         outlier_all = outlier_all.unionAll(outlier_c)
-    #outliers, _ = iqr_outliers(kmeans_df,'dist_c')
-    print_outlier_summary(outlier_all, df.count(), "Kmeans")
+    outlier_count = outlier_all.count()
+    df_count = df.count()
+    kmeans_type = 'multivariate' if len(numeric_cols) > 1 else 'univariate'
+    print_outlier_summary(outlier_count, df_count, 'kMeans ({})'.format(kmeans_type))
     return outlier_all
 
 def iqr_outliers(df, col, target_col=None, side='both', to_print=False):
@@ -91,7 +118,8 @@ def iqr_outliers(df, col, target_col=None, side='both', to_print=False):
         threshold += .5
 
     if to_print:
-        print_outlier_summary(out, df.count(), "IQR")
+        out_count, df_count = out.count(), df.count()
+        print_outlier_summary(out_count, df_count, "IQR")
     return out.select('rid', col), out.select('rid', target_col)
 
 def main(files_in):
@@ -101,9 +129,11 @@ def main(files_in):
             .getOrCreate()
 
     for tsv in files_in:
-        df = spark.read.csv(tsv, header = True,inferSchema = True, sep='\t')
+        df = spark.read.csv(tsv, header=True, inferSchema=True, sep='\t')
         df_count = df.count()
+        numeric_cols = []
         outliers = defaultdict(dict)
+
         if 'rid' not in df.columns:
             df = df.withColumn("rid", monotonically_increasing_id())
 
@@ -113,11 +143,15 @@ def main(files_in):
                 continue
 
             if 'string' in dtype:
-                outliers[col]['frequency'] = str_frequency(df, col)
+                outliers[col]['frequency'] = bucket_frequency(df, col, 'Frequency')
                 outliers[col]['length'] = str_length(df, col)
             else:
+                numeric_cols.append(col)
                 outliers[col]['iqr'], _ = iqr_outliers(df, col, to_print=True)
-                outliers[col]['kmeans'] = kmeans_outliers(df, col)
+                outliers[col]['kMeans_uni'] = kmeans_outliers(df, col)
+                outliers[col]['histogram'] = histogram_outliers(df, col)
+
+        outliers['kMeans_multi'] = kmeans_outliers(df, numeric_cols)
 
     spark.stop()
     
