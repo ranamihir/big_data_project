@@ -44,7 +44,7 @@ def plot_circles(lat_data, long_data, cluster_ids, file_out, plots_path='dbscan_
         color = get_cluster_color(cid)
         marker = folium.CircleMarker(location=[lat, long], radius=5, color=color, \
             fill=color, fill_opacity='0.3', popup=folium.Popup('lat: {:.5f}, \
-                long: {:.5f}\nrid: {}, clusterID: {}'.format(lat, long, rid, cid)))
+                long: {:.5f}<br>rid: {}, cluster_id: {}'.format(lat, long, rid, cid)))
         marker.add_to(folium_map)
     print('Done.')
 
