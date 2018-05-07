@@ -1,15 +1,18 @@
+import findspark
+findspark.init()
+
 import glob
 import shutil
 import argparse
 from collections import defaultdict
-from scipy.spatial.distance import euclidean
+from scipy.spatial.distance import euclidean,mahalanobis
 import numpy as np
 
 from pyspark.sql import SparkSession
 from pyspark.sql.types import DoubleType
 from pyspark.sql.functions import *
 from pyspark.mllib.feature import StandardScaler, StandardScalerModel
-from pyspark.mllib.clustering import KMeans, KMeansModel
+from pyspark.mllib.clustering import KMeans, KMeansModel,GaussianMixture, GaussianMixtureModel
 from pyspark.ml.feature import Bucketizer
 
 import utils
@@ -80,6 +83,55 @@ def kmeans_outliers(df, numeric_cols, k=3, maxIterations=100):
     print_outlier_summary(outlier_count, df_count, 'kMeans ({})'.format(kmeans_type))
     return outlier_all
 
+def gmm_outliers(df, numeric_cols, k=3, maxIterations=100):
+    def getDistances(x):
+        clust_center = x[0]
+        rid = x[1][0]
+        point = np.array(x[1][1].toArray()).astype(float)
+        dist = mahalanobis(clust_center,point,sigmas_inv[clust_center])
+        return (int(rid),int(clust_center),float(dist))
+    
+    
+    # Convert to array if only one column (univariate) passed
+    if not isinstance(numeric_cols, list):
+        numeric_cols = [numeric_cols]
+    cols = ['rid']
+    cols.extend(numeric_cols)
+    df_col_rdd = df[cols].rdd
+    rid = df_col_rdd.map(lambda x: x[0])
+    vso = df_col_rdd.map(lambda x: np.array(x[1:]).astype(float))
+    scaler = StandardScaler(withMean=True, withStd=True).fit(vso)
+    vso = scaler.transform(vso)
+    
+    gmm = GaussianMixture.train(vso, k, maxIterations=maxIterations,seed=10)
+    
+    df_col_rdd = rid.zip(vso).toDF().rdd
+    labels = gmm.predict(vso)
+    df_col_rdd = labels.zip(df_col_rdd)
+    mus = []
+    sigmas = []
+    sigmas_inv = []
+    for i in range(k):
+        mus.append(np.array(gmm.gaussians[i].mu.toArray()).astype(float))
+        sigmas.append(np.array(gmm.gaussians[i].sigma.toArray()).astype(float))
+        sigmas_inv.append(np.linalg.inv(sigmas[i]))
+    
+    #print(df_col_rdd.collect())
+    rdd_w_clusts = df_col_rdd.map(lambda x: getDistances(x))
+    cols = ['rid', 'c_no', 'dist_c']
+    gmm_df = rdd_w_clusts.toDF(cols)
+    outlier_all, _ = iqr_outliers(gmm_df.where(gmm_df['c_no'] == 0), 'dist_c')
+    for i in range(1, k):
+        outlier_c, _ = iqr_outliers(gmm_df.where(gmm_df['c_no'] == i), 'dist_c')
+        outlier_all = outlier_all.unionAll(outlier_c)
+    outlier_count = outlier_all.count()
+    df_count = df.count()
+    gmm_type = 'multivariate' if len(numeric_cols) > 1 else 'univariate'
+    print_outlier_summary(outlier_count, df_count, 'GMM ({})'.format(gmm_type))
+    #print_outlier_summary(outlier_all.count(), df.count(), "kMeans (multivariate)")
+    return outlier_all
+
+
 def iqr_outliers(df, col, target_col=None, side='both', to_print=False):
     '''
     This method computes outliers on target_col values
@@ -139,8 +191,10 @@ def main(files_in):
                 outliers[col]['iqr'], _ = iqr_outliers(df, col, to_print=True)
                 outliers[col]['kMeans_uni'] = kmeans_outliers(df, col)
                 outliers[col]['histogram'] = histogram_outliers(df, col)
+                outliers[col]['gmm_uni'] = gmm_outliers(df,col)
 
         outliers['kMeans_multi'] = kmeans_outliers(df, numeric_cols)
+        outliers['gmm_multi'] = gmm_outliers(df,numeric_cols)
 
     spark.stop()
     
