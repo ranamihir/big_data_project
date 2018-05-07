@@ -10,6 +10,7 @@ from pyspark.sql.types import DoubleType
 from pyspark.sql.functions import *
 from pyspark.mllib.feature import StandardScaler, StandardScalerModel
 from pyspark.mllib.clustering import KMeans, KMeansModel
+from pyspark.ml.feature import Bucketizer
 
 import utils
 
@@ -20,17 +21,25 @@ parser.add_argument('files_in', metavar='fin', type=str, nargs='+',
 def print_outlier_summary(outliers_count, df_count, title):
     print("\t{}:\n\t\tcounts: {}\n\t\tcounts % = {:.2f}%".format(title, outliers_count, 100*(outliers_count/df_count)))
 
-def str_frequency(df, col):
+def bucket_frequency(df, col, title='Frequency'):
     vals = df.groupBy(col).count()
     vals_col = "{}_temp".format(col)
     vals = vals.withColumnRenamed(col, vals_col)
     df = df.join(vals, df[col] == vals[vals_col]).drop(vals[vals_col])
     out, _ = iqr_outliers(df, col, 'count', 'left')
     out_count, df_count = out.count(), df.count()
-    print_outlier_summary(out_count, df_count, "Frequency")
+    print_outlier_summary(out_count, df_count, title)
     return out
 
-def kmeans(df, numeric_cols, k=3, maxIterations=100):
+def histogram_outliers(df, col, bins=50):
+    max_val = df.agg({col: 'max'}).collect()[0][0]
+    min_val = df.agg({col: 'min'}).collect()[0][0]
+    splits = np.linspace(min_val, max_val, num=bins+1, endpoint=True)
+    bucketizer = Bucketizer(splits=splits, inputCol=col, outputCol='{}_bucket'.format(col))
+    df_buck = bucketizer.setHandleInvalid('keep').transform(df)
+    return bucket_frequency(df_buck, '{}_bucket'.format(col), 'Frequency @ {} bins'.format(bins))
+
+def kmeans_outliers(df, numeric_cols, k=3, maxIterations=100):
     def addclustercols(x):
         points = np.array(x[1].toArray()).astype(float)
         center = clusters.centers[0]
@@ -124,14 +133,14 @@ def main(files_in):
                 continue
 
             if 'string' in dtype:
-                vals = df.groupBy(col).count()
-                outliers[col]['frequency'] = str_frequency(df, col)
+                outliers[col]['frequency'] = bucket_frequency(df, col, 'Frequency')
             else:
                 numeric_cols.append(col)
                 outliers[col]['iqr'], _ = iqr_outliers(df, col, to_print=True)
-                outliers[col]['kMeans_uni'] = kmeans(df, col)
+                outliers[col]['kMeans_uni'] = kmeans_outliers(df, col)
+                outliers[col]['histogram'] = histogram_outliers(df, col)
 
-        outliers['kMeans_multi'] = kmeans(df, numeric_cols)
+        outliers['kMeans_multi'] = kmeans_outliers(df, numeric_cols)
 
     spark.stop()
     
