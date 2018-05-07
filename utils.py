@@ -4,7 +4,7 @@ import numpy as np
 import glob
 import shutil
 
-from pyspark.sql.functions import *
+import pyspark.sql.functions as F
 from pyspark.sql.types import StringType, IntegerType
 
 commas_re = re.compile('(\d+,\d+)(,\d*)*')
@@ -44,7 +44,13 @@ def organize_cleaned_data(out_folder, f_out):
 
 def col_len(ele):
     return len(ele)
-    
 
-replace_commas_symbols_udf = udf(replace_commas_symbols, StringType())
-col_len_udf = udf(col_len, IntegerType())
+import re
+
+def replace_na(ele):
+    empty_re = re.compile(r'^$|^nan$|^n/a$|^none$|^n\\a$', flags=re.I)
+    return None if re.search(empty_re, ele) else ele
+
+replace_na_udf = F.udf(replace_na)
+replace_commas_symbols_udf = F.udf(replace_commas_symbols, StringType())
+col_len_udf = F.udf(col_len, IntegerType())

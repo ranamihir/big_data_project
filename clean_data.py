@@ -1,7 +1,7 @@
 import argparse
 from pyspark.sql import SparkSession
 from pyspark.sql.types import DoubleType
-from pyspark.sql.functions import *
+import pyspark.sql.functions as F
 
 import utils
 
@@ -26,6 +26,14 @@ def correct_bad_classified_cols(df, verbose=False):
             replaced_df = replaced_df.drop(tmp_col)
     return replaced_df
 
+def remove_disguised_missing_vals(df):
+    clean_df = df
+    for col, dtype in clean_df.dtypes:
+        if "string" in dtype:
+            clean_df = clean_df.withColumn(col, F.trim(F.col(col)))
+            clean_df = clean_df.withColumn(col, utils.replace_na_udf(clean_df[col]))
+    return clean_df.dropna()
+
 def dropna(df):
     return df.dropna()
 
@@ -41,6 +49,8 @@ def main(files_in, verbose):
         replaced_df = correct_bad_classified_cols(df, verbose)
         # Remove null values
         cleaned_df = dropna(replaced_df)
+        # remove disguised data
+        cleaned_df = remove_disguised_missing_vals(cleaned_df)
         f_out = "{}_clean.tsv".format(tsv.split('.')[0])
         utils.write_tsv(cleaned_df, f_out)
 
