@@ -1,5 +1,8 @@
-import findspark
-findspark.init()
+try:
+    from pyspark.sql import SparkSession
+except:
+    import findspark
+    findspark.init()
 
 import glob
 import shutil
