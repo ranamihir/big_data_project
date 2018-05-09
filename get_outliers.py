@@ -203,6 +203,7 @@ def main(files_in):
             .getOrCreate()
     warnings.filterwarnings("ignore")
     for tsv in files_in:
+        print("####### Analysing: {} #######".format(tsv))
         df = spark.read.csv(tsv, header=True, inferSchema=True, sep='\t')
         df_count = df.count()
         numeric_cols = []
