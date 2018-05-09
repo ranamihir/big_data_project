@@ -7,10 +7,12 @@ except:
 import glob
 import shutil
 import time
+import warnings
 import json
 import argparse
 from collections import defaultdict
 from scipy.spatial.distance import euclidean,mahalanobis
+import scipy.stats as stats
 import numpy as np
 
 from pyspark.sql import SparkSession
@@ -33,7 +35,7 @@ def str_length(df, col):
     target_col = "{}_len".format(col)
     df = df.withColumn(target_col, utils.col_len_udf(df[col]))
     out, out_target = iqr_outliers(df, col, target_col)
-    print_outlier_summary(out, df.count(), "Length")
+    print_outlier_summary(out.count(), df.count(), "Length")
     return out
 
 def bucket_frequency(df, col, title='Frequency'):
@@ -143,6 +145,23 @@ def kmeans_outliers(df, numeric_cols, k=3, maxIterations=100):
 #     #print_outlier_summary(outlier_all.count(), df.count(), "kMeans (multivariate)")
 #     return outlier_all
 
+def likelihood(data, model, params):
+    return np.sum(np.log(model.pdf(data, *params)))
+
+def prob_models_outliers(df, col, max_points=100000):
+    models = [stats.norm, stats.beta, stats.gamma]
+    models_names = ["Gaussian", "Beta", "Gamma"]
+    n = df.count()
+    df_temp = df if n <= max_points else sample(fraction=max_points/float(n))
+    data = np.array(df.select(col).rdd.map(lambda x: x[0]).collect()).reshape(-1, 1)
+    params = [model.fit(data) for i, model in enumerate(models)]
+    best_ix = np.argmax([likelihood(data, models[i], params[i]) for i, model in enumerate(models)])
+    best_params = params[best_ix]
+    best_model = models[best_ix]
+    low, high = best_model.ppf([0.01, 0.99], *best_params)
+    out = df_temp.select('rid', col).where((df_temp[col] < low) | (df_temp[col] > high))
+    print_outlier_summary(out.count(), n, "Probability distributions {}".format(models_names[best_ix]))
+    return out
 
 def iqr_outliers(df, col, target_col=None, side='both', to_print=False):
     '''
@@ -182,7 +201,7 @@ def main(files_in):
             .builder \
             .appName("Nulls and Outliers Detection") \
             .getOrCreate()
-
+    warnings.filterwarnings("ignore")
     for tsv in files_in:
         df = spark.read.csv(tsv, header=True, inferSchema=True, sep='\t')
         df_count = df.count()
@@ -206,6 +225,7 @@ def main(files_in):
                 outliers[col]['kMeans_uni'] = kmeans_outliers(df, col)
                 outliers[col]['histogram'] = histogram_outliers(df, col)
                 #outliers[col]['gmm_uni'] = gmm_outliers(df,col)
+                outliers[col]['prob_models'] = prob_models_outliers(df, col)
 
         outliers['kMeans_multi'] = kmeans_outliers(df, numeric_cols)
         #outliers['gmm_multi'] = gmm_outliers(df,numeric_cols)
