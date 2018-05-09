@@ -32,4 +32,4 @@ for f in ${infiles[*]}; do
   clean+=("$clean_file")
 done
 
-spark-submit --py-files=utils.py get_outliers.py "${clean[*]}"
+spark-submit --py-files=utils.py get_outliers.py ${clean[*]}
