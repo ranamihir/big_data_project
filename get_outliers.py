@@ -212,7 +212,9 @@ def main(files_in):
             df = df.withColumn("rid", monotonically_increasing_id())
 
         for col, dtype in df.dtypes:
-            if col == 'rid':
+            dtype = dtype.lower()
+            if col == 'rid' or 'time' in dtype or 'date' in dtype or 'array'\
+                in dtype or 'boolean' in dtype or 'byte' in dtype or 'binary' in dtype:
                 continue
             print("### Col: {} | dtype: {} ###".format(col, dtype))
             if 'string' in dtype:
