@@ -2,7 +2,8 @@
 
 module load python/gnu/3.4.4
 module load spark/2.2.0
-export PYSPARK_PYTHON=/share/apps/python/3.4.4/bin/python
+export PYSPARK_PYTHON=/share/apps/python/3.6.5/bin/python3
+export PYSPARK_DRIVER_PYTHON=/share/apps/python/3.6.5/bin/python3
 
 export PYTHONHASHSEED=0
 export SPARK_YARN_USER_ENV=PYTHONHASHSEED=0
