@@ -212,10 +212,9 @@ def main(files_in):
             df = df.withColumn("rid", monotonically_increasing_id())
 
         for col, dtype in df.dtypes:
-            print("### Col: {} | dtype: {} ###".format(col, dtype))
             if col == 'rid':
                 continue
-
+            print("### Col: {} | dtype: {} ###".format(col, dtype))
             if 'string' in dtype:
                 outliers[col]['frequency'] = bucket_frequency(df, col, 'Frequency')
                 outliers[col]['length'] = str_length(df, col)
