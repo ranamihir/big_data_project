@@ -69,7 +69,7 @@ def kmeans_outliers(df, numeric_cols, k=3, maxIterations=100):
             if dist < mindist:
                 c1 = i
                 mindist = dist
-        return (int(x[0]), int(c1), float(mindist))
+        return (int(x[0]), float(mindist), int(c1))
 
     # Convert to array if only one column (univariate) passed
     if not isinstance(numeric_cols, list):
@@ -85,7 +85,7 @@ def kmeans_outliers(df, numeric_cols, k=3, maxIterations=100):
     clusters = KMeans.train(vso, k, initializationMode='k-means||', maxIterations=maxIterations)
     df_col_rdd = label.zip(vso).toDF().rdd
     rdd_w_clusts = df_col_rdd.map(lambda x: addclustercols(x))
-    cols = ['rid', 'c_no', 'dist_c']
+    cols = ['rid', 'dist_c','c_no']
     kmeans_df = rdd_w_clusts.toDF(cols)
     outlier_all, _ = iqr_outliers(kmeans_df.where(kmeans_df['c_no'] == 0), 'dist_c')
     for i in range(1, k):
@@ -176,6 +176,8 @@ def iqr_outliers(df, col, target_col=None, side='both', to_print=False):
         return df.select('rid', col), df.select(target_col)
 
     quantiles = df.approxQuantile(target_col,[0.25,0.75],0.05)
+    if(len(quantiles) < 2):
+        return spark.createDataFrame(sc.emptyRDD(),df.schema[:2])
     IQR = quantiles[1] - quantiles[0]
     threshold = 1.5
     not_done = True
@@ -208,10 +210,11 @@ def main(files_in):
         df_count = df.count()
         numeric_cols = []
         outliers = defaultdict(dict)
-
+        outliers_all = defaultdict(dict)
         if 'rid' not in df.columns:
             df = df.withColumn("rid", monotonically_increasing_id())
-
+        
+        uni_cols = ['kMeans_uni','iqr','histogram','prob_models']
         for col, dtype in df.dtypes:
             dtype = dtype.lower()
             if col == 'rid' or 'time' in dtype or 'date' in dtype or 'array'\
@@ -228,6 +231,17 @@ def main(files_in):
                 outliers[col]['histogram'] = histogram_outliers(df, col)
                 #outliers[col]['gmm_uni'] = gmm_outliers(df,col)
                 outliers[col]['prob_models'] = prob_models_outliers(df, col)
+                #get the agreeing outliers
+                outliers_all[col] = outliers[col][uni_cols[0]].unionAll(outliers[col][uni_cols[1]])
+                for i in range(2,len(uni_cols)):
+                    outliers_all[col] = outliers_all[col].unionAll(outliers[col][uni_cols[i]])
+                outliers_all_rdd = outliers_all[col].rdd
+                outliers_all_rdd = outliers_all_rdd.map(lambda x: (x[0],1)).reduceByKey(lambda a,b:a+b).filter(lambda x:x[1]>=(len(uni_cols))/2)
+                temp_cols = ['rid','no_appeared']
+                outliers_all[col] = outliers_all_rdd.toDF(temp_cols)
+                print_outlier_summary(outliers_all[col].count(),df.count(),"No. of outliers occuring more than {} times: ".format(len(uni_cols)/2))
+                
+                
 
         outliers['kMeans_multi'] = kmeans_outliers(df, numeric_cols)
         #outliers['gmm_multi'] = gmm_outliers(df,numeric_cols)
